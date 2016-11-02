@@ -9,6 +9,8 @@ import { ObjectComposedLook } from "./objecthandlers/objectcomposedlook";
 import { ObjectCustomActions } from "./objecthandlers/objectcustomactions";
 import { ObjectFiles } from "./objecthandlers/objectfiles";
 import { ObjectLists } from "./objecthandlers/objectlists";
+import { ObjectContentTypes } from "./objecthandlers/objectcontenttypes";
+import { ObjectSiteFields } from "./objecthandlers/objectsitefields";
 import { Util } from "./util";
 import { Logger, LogLevel } from "../../utils/logging";
 import { SiteSchema } from "./schema/ISiteSchema";
@@ -36,6 +38,8 @@ export class Provisioning {
             "CustomActions": ObjectCustomActions,
             "Files": ObjectFiles,
             "Lists": ObjectLists,
+            "ContentTypes": ObjectContentTypes,
+            "SiteFields": ObjectSiteFields,
         };
         this.httpClient = new HttpClient();
     }
