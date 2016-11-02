@@ -51,8 +51,12 @@ export {
 } from "./roles"
 
 export {
+    Search,
+    SearchProperty,
+    SearchPropertyValue,
     SearchQuery,
     SearchResult,
+    SearchResults,
     Sort,
     SortDirection,
     ReorderingRule,
@@ -61,6 +65,7 @@ export {
 } from "./search";
 
 export {
+    SearchSuggest,
     SearchSuggestQuery,
     SearchSuggestResult,
     PersonalResultSuggestion
