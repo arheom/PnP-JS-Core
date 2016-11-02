@@ -1,7 +1,7 @@
 "use strict";
 
-import { Search, SearchQuery, SearchResult } from "./search";
-import { SearchSuggest, SearchSuggestQuery } from "./searchsuggest";
+import { Search, SearchQuery, SearchResults } from "./search";
+import { SearchSuggest, SearchSuggestQuery, SearchSuggestResult } from "./searchsuggest";
 import { Site } from "./site";
 import { Web } from "./webs";
 import { Util } from "../../utils/util";
@@ -19,7 +19,7 @@ export class Rest {
      *
      * @param query The SearchQuery definition
      */
-    public searchSuggest(query: string | SearchSuggestQuery): Promise<any> {
+    public searchSuggest(query: string | SearchSuggestQuery): Promise<SearchSuggestResult> {
 
         let finalQuery: SearchSuggestQuery;
 
@@ -37,7 +37,7 @@ export class Rest {
      *
      * @param query The SearchQuery definition
      */
-    public search(query: string | SearchQuery): Promise<SearchResult> {
+    public search(query: string | SearchQuery): Promise<SearchResults> {
 
         let finalQuery: SearchQuery;
 

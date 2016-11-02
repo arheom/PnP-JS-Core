@@ -72,7 +72,7 @@ export class SearchSuggest extends QueryableInstance {
         super(baseUrl, path);
     }
 
-    public execute(query: SearchSuggestQuery): Promise<any> {
+    public execute(query: SearchSuggestQuery): Promise<SearchSuggestResult> {
         this.mapQueryToQueryString(query);
         return this.get().then(response => new SearchSuggestResult(response));
     }
