@@ -9,6 +9,7 @@ export class ProvisioningStep {
     private objects: any;
     private parameters: any;
     private handler: any;
+    private tokenParser: any;
 
     /**
      * Executes the ProvisioningStep function
@@ -18,11 +19,11 @@ export class ProvisioningStep {
     public execute(dependentPromise?) {
         let _handler = new this.handler();
         if (!dependentPromise) {
-            return _handler.ProvisionObjects(this.objects, this.parameters);
+            return _handler.ProvisionObjects(this.objects, this.tokenParser, this.parameters);
         }
         return new Promise((resolve, reject) => {
             dependentPromise.then(() => {
-                return _handler.ProvisionObjects(this.objects, this.parameters).then(resolve, resolve);
+                return _handler.ProvisionObjects(this.objects, this.tokenParser, this.parameters).then(resolve, resolve);
             });
         });
     }
@@ -30,11 +31,12 @@ export class ProvisioningStep {
     /**
      * Creates a new instance of the ProvisioningStep class
      */
-    constructor(name: string, index: number, objects: any, parameters: any, handler: any) {
+    constructor(name: string, index: number, objects: any, parameters: any, handler: any, tokenParser: any) {
         this.name = name;
         this.index = index;
         this.objects = objects;
         this.parameters = parameters;
         this.handler = handler;
+        this.tokenParser = tokenParser;
     }
 }

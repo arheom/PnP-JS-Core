@@ -1,6 +1,7 @@
 "use strict";
 
 import { ProvisioningStep } from "./provisioningstep";
+import { TokenParser } from "./objecthandlers/tokenparser";
 import { ObjectNavigation } from "./objecthandlers/objectnavigation";
 import { ObjectPropertyBagEntries } from "./objecthandlers/objectpropertybagentries";
 import { ObjectFeatures } from "./objecthandlers/objectfeatures";
@@ -24,6 +25,7 @@ export class Provisioning {
     private httpClient: HttpClient;
     private startTime;
     private queueItems: Array<ProvisioningStep>;
+    private tokenParser: TokenParser;
 
     /**
      * Creates a new instance of the Provisioning class
@@ -42,6 +44,7 @@ export class Provisioning {
             "SiteFields": ObjectSiteFields,
         };
         this.httpClient = new HttpClient();
+        this.tokenParser = new TokenParser();
     }
 
     /**
@@ -75,34 +78,41 @@ export class Provisioning {
      */
     private start(json: SiteSchema, queue: Array<string>) {
         return new Promise((resolve, reject) => {
-            this.startTime = new Date().getTime();
-            this.queueItems = [];
+            const clientContext = SP.ClientContext.get_current();
+            const web = clientContext.get_web();
+            this.tokenParser.initParser(web, json).then(() => {
+                this.startTime = new Date().getTime();
+                this.queueItems = [];
 
-            queue.forEach((q, index) => {
-                if (!this.handlers[q]) {
-                    return;
-                }
-                this.queueItems.push(new ProvisioningStep(q, index, json[q], json.Parameters, this.handlers[q]));
-            });
+                queue.forEach((q, index) => {
+                    if (!this.handlers[q]) {
+                        return;
+                    }
+                    this.queueItems.push(new ProvisioningStep(q, index, json[q], json.Parameters, this.handlers[q], this.tokenParser));
+                });
 
-            let promises = [];
-            promises.push(new Promise((res) => {
-                Logger.write("Provisioning: Code execution scope started", LogLevel.Info);
-                res();
-            }));
-            let index = 1;
-            while (this.queueItems[index - 1] !== undefined) {
-                let i = promises.length - 1;
-                promises.push(this.queueItems[index - 1].execute(promises[i]));
-                index++;
-            };
+                let promises = [];
+                promises.push(new Promise((res) => {
+                    Logger.write("Provisioning: Code execution scope started", LogLevel.Info);
+                    res();
+                }));
+                let index = 1;
+                while (this.queueItems[index - 1] !== undefined) {
+                    let i = promises.length - 1;
+                    promises.push(this.queueItems[index - 1].execute(promises[i]));
+                    index++;
+                };
 
-            Promise.all(promises).then((value) => {
-                Logger.write("Provisioning: Code execution scope ended", LogLevel.Info);
-                resolve(value);
-            }, (error) => {
-                Logger.write("Provisioning: Code execution scope ended" + JSON.stringify(error), LogLevel.Error);
-                reject(error);
+                Promise.all(promises).then((value) => {
+                    Logger.write("Provisioning: Code execution scope ended", LogLevel.Info);
+                    resolve(value);
+                }, (error) => {
+                    Logger.write("Provisioning: Code execution scope ended" + JSON.stringify(error), LogLevel.Error);
+                    reject(error);
+                });
+            })
+            .catch((ex) => {
+                Logger.write("Token Parser has an error: " + ex.toString(), LogLevel.Error);
             });
         });
     }

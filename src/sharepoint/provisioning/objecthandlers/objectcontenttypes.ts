@@ -3,11 +3,15 @@
 import { ObjectHandlerBase } from "./objecthandlerbase";
 import { IContentType } from "./../schema/IContentType";
 import { IContentTypeFieldRef } from "./../schema/IContentTypeFieldRef";
+import { Logger, LogLevel } from "../../../utils/logging";
+import { TokenParser } from "./tokenparser";
+import { ContentTypeIdToken } from "./tokendefinitions/contenttypeidtoken";
 
 /**
  * Describes the Object Content Type Handler
  */
 export class ObjectContentTypes extends ObjectHandlerBase {
+    private tokenParser: TokenParser;
     /**
      * Creates a new instance of the ObjectContentType class
      */
@@ -20,8 +24,9 @@ export class ObjectContentTypes extends ObjectHandlerBase {
      * 
      * @param customactions The Content Types to provision
      */
-    public ProvisionObjects(objects: Array<IContentType>): Promise<{}> {
+    public ProvisionObjects(objects: Array<IContentType>, tokenParser: TokenParser): Promise<{}> {
         super.scope_started();
+        this.tokenParser = tokenParser;
         return new Promise<{}>((resolve, reject) => {
             const clientContext = SP.ClientContext.get_current();
             // content types will be provisioned inside the root web, not in subsites
@@ -40,7 +45,7 @@ export class ObjectContentTypes extends ObjectHandlerBase {
 
                         if (existingContentType == null) {
                             // add mode
-                            this.AddNewContentType(web, contentTypes, fields, currentContentType);
+                            resolve(this.CreateContentType(web, currentContentType, contentTypes.get_data(), fields.get_data()));
                         } else {
                             // update mode
                             if (currentContentType.Overwrite) {
@@ -48,7 +53,7 @@ export class ObjectContentTypes extends ObjectHandlerBase {
                                 existingContentType.deleteObject();
                                 clientContext.executeQueryAsync(
                                     () => {
-                                        resolve(this.AddNewContentType(web, contentTypes, fields, currentContentType));
+                                        resolve(this.CreateContentType(web, currentContentType, contentTypes.get_data(), fields.get_data()));
                                     });
                             } else {
                                 resolve(this.UpdateContentType(web, existingContentType, currentContentType).then(() => { resolve(); }));
@@ -56,14 +61,14 @@ export class ObjectContentTypes extends ObjectHandlerBase {
                         }
                     });
                 }, (sender, error) => {
-                    console.log(error);
+                    Logger.write(error.toString(), LogLevel.Error);
                     super.scope_ended();
                     resolve();
                 });
         });
     }
 
-    private UpdateContentType(web: SP.Web, existingContentType: SP.ContentType, templateContentType: IContentType): Promise<void> {
+    private UpdateContentType(web: SP.Web, existingContentType: SP.ContentType, templateContentType: IContentType): Promise<boolean> {
         let isDirty = false;
         if (templateContentType.Hidden && existingContentType.get_hidden() !== templateContentType.Hidden) {
             existingContentType.set_hidden(templateContentType.Hidden);
@@ -118,69 +123,82 @@ export class ObjectContentTypes extends ObjectHandlerBase {
         // }
         // #endif
 
-        return new Promise<void>((resolve, reject) => {
+        return new Promise<boolean>((resolve, reject) => {
             if (isDirty) {
                 existingContentType.update(true);
+                web.get_context().load(existingContentType);
                 web.get_context().executeQueryAsync(() => {
-                    // Delta handling
-                    let targetIds: SP.Guid[] = existingContentType.get_fieldLinks().get_data().map((item) => { return item.get_id(); });
-                    let sourceIds: SP.Guid[] = templateContentType.FieldRefs.map((item) => { return item.ID; });
-
-                    let fieldsNotPresentInTarget = sourceIds.filter((element) => { return targetIds.indexOf(element) < 0; });
-
-                    if (fieldsNotPresentInTarget.length > 0) {
-                        fieldsNotPresentInTarget.forEach((fieldId, idx) => {
-                            // var fieldRef = templateContentType.FieldRefs.filter(fr => fr.ID === fieldId);
-                            let field = web.get_fields().getById(fieldId);
-                            existingContentType.get_fields().add(field);
-                            // TODO: check if this works...without required and Hidden?
-                            // web.AddFieldToContentType(existingContentType, field, fieldRef.Required, fieldRef.Hidden);
-                        });
-                    }
-
-                    isDirty = false;
-                    let commonIds = sourceIds.filter((element) => { return targetIds.indexOf(element) > -1; });
-                    commonIds.forEach((fieldId) => {
-                        let fieldLink: SP.FieldLink = existingContentType.get_fieldLinks().get_data().filter((fl) => fl.get_id() === fieldId)[0];
-                        let fieldRef: IContentTypeFieldRef = templateContentType.FieldRefs.filter(fr => fr.ID === fieldId)[0];
-                        if (fieldRef != null) {
-                            if (fieldLink.get_required() !== fieldRef.Required) {
-                                fieldLink.set_required(fieldRef.Required);
-                                isDirty = true;
-                            }
-                            if (fieldLink.get_hidden() !== fieldRef.Hidden) {
-                                fieldLink.set_hidden(fieldRef.Hidden);
-                                isDirty = true;
-                            }
-                        }
-                    });
-
-                    if (isDirty) {
-                        existingContentType.update(true);
-                        web.get_context().executeQueryAsync(() => { resolve(); }, () => { reject(); });
-                    }
+                    resolve(this.UpdateContentTypeFields(web, existingContentType, templateContentType));
                 }, (sender, error) => {
-                    console.log(error);
+                    Logger.write(error.toString(), LogLevel.Error);
                     reject();
                 });
             } else {
-                resolve();
+                resolve(this.UpdateContentTypeFields(web, existingContentType, templateContentType));
             }
         });
 
     }
 
-    private AddNewContentType(web: SP.Web,
-        contentTypes: SP.ContentTypeCollection,
-        fields: SP.FieldCollection,
-        obj: IContentType): Promise<SP.ContentType> {
-        return this.CreateContentType(web, obj, contentTypes.get_data(), fields.get_data());
+    private UpdateContentTypeFields(web: SP.Web, existingContentType: SP.ContentType, templateContentType: IContentType): Promise<boolean> {
+        return new Promise<boolean>((resolve, reject) => {
+            let isDirty = false;
+            // Delta handling
+            let targetIds: SP.Guid[] = existingContentType.get_fieldLinks().get_data().map((item) => item.get_id());
+            let targetAllIds:string = targetIds.map(id => id.toString()).join(",").toLowerCase();
+            let sourceIds: SP.Guid[] = templateContentType.FieldRefs.map((item) => item.ID);
+            let commonIds = sourceIds.filter((element) => targetAllIds.indexOf(element.toString().toLowerCase()) > -1);
+            let fieldsNotPresentInTarget = sourceIds.filter((element) => targetAllIds.indexOf(element.toString().toLowerCase()) < 0);
+
+            commonIds.forEach((fieldId) => {
+                let fieldLink: SP.FieldLink = existingContentType.get_fieldLinks().get_data().filter((fl) => fl.get_id().toString().toLowerCase() === fieldId.toString().toLowerCase())[0];
+                let fieldRef: IContentTypeFieldRef = templateContentType.FieldRefs.filter(fr => fr.ID.toString().toLowerCase() === fieldId.toString().toLowerCase())[0];
+                if (fieldRef != null) {
+                    if (fieldLink.get_required() !== fieldRef.Required) {
+                        fieldLink.set_required(fieldRef.Required);
+                        isDirty = true;
+                    }
+                    if (fieldLink.get_hidden() !== fieldRef.Hidden) {
+                        fieldLink.set_hidden(fieldRef.Hidden);
+                        isDirty = true;
+                    }
+                }
+            });
+
+            if (fieldsNotPresentInTarget.length > 0) {
+                fieldsNotPresentInTarget.forEach((fieldId: SP.Guid) => {
+                    let fieldLink = new SP.FieldLinkCreationInformation();
+                    fieldLink.set_field(web.get_fields().getById(fieldId));
+                    existingContentType.get_fieldLinks().add(fieldLink);
+                });
+                existingContentType.get_fieldLinks().reorder(templateContentType.FieldRefs.map((field) => { return field.Name; }));
+                existingContentType.update(true);
+                web.get_context().executeQueryAsync(() => {
+                    resolve(true);
+                }, (sender, error) => {
+                    Logger.write(error.toString(), LogLevel.Error);
+                    reject();
+                });
+            } else {
+                if (isDirty) {
+                    existingContentType.update(true);
+                    web.get_context().executeQueryAsync(() => {
+                        resolve(true);
+                    }, (sender, error) => {
+                        Logger.write(error.toString(), LogLevel.Error);
+                        reject();
+                    });
+                } else {
+                    resolve(true);
+                }
+            }
+        });
     }
 
     private CreateContentType(web: SP.Web,
-        templateContentType: IContentType,
-        existingCTs: SP.ContentType[] = null,
-        existingFields: SP.Field[] = null): Promise<SP.ContentType> {
+            templateContentType: IContentType,
+            existingCTs: SP.ContentType[] = null,
+            existingFields: SP.Field[] = null): Promise<boolean> {
         let name = templateContentType.Name;
         let description = templateContentType.Description;
         let parentId = templateContentType.ParentId.toString();
@@ -197,19 +215,11 @@ export class ObjectContentTypes extends ObjectHandlerBase {
         // TODO: not sure how to set the ID of the content type and not only the parent ID
         createdCTInfo.set_parentContentType(web.get_contentTypes().getById(parentId));
         let createdCT: SP.ContentType = web.get_contentTypes().add(createdCTInfo);
-        web.get_context().load(createdCT);
-        return new Promise<SP.ContentType>((resolve, reject) => {
+        return new Promise<boolean>((resolve, reject) => {
+            web.get_context().load(createdCT, "Id", "Name");
             web.get_context().executeQueryAsync(() => {
-                if (templateContentType.FieldRefs && templateContentType.FieldRefs.length > 0) {
-                    templateContentType.FieldRefs.forEach((fieldRef) => {
-                        let field = web.get_fields().getById(fieldRef.ID);
-                        let fieldLink: SP.FieldLinkCreationInformation = new SP.FieldLinkCreationInformation();
-                        fieldLink.set_field(field);
-                        createdCT.get_fieldLinks().add(fieldLink);
-                        // web.addFieldToContentType(createdCT, field, fieldRef.Required, fieldRef.Hidden);
-                    });
-                    createdCT.get_fieldLinks().reorder(templateContentType.FieldRefs.map((field) => { return field.Name; }));
-                }
+                // add the token to be used later in the installation
+                this.tokenParser.addToken(new ContentTypeIdToken(web, templateContentType.Name, createdCT.get_id().toString()));
 
                 if (templateContentType.ReadOnly) {
                     createdCT.set_readOnly(templateContentType.ReadOnly);
@@ -241,17 +251,15 @@ export class ObjectContentTypes extends ObjectHandlerBase {
                 createdCT.update(true);
                 web.get_context().load(createdCT);
                 web.get_context().executeQueryAsync(() => {
-                    // TODO: After finding the proper API for Document set to update this part
-                    resolve(createdCT);
+                    resolve(this.UpdateContentTypeFields(web, createdCT, templateContentType));
                 }, (sender, error) => {
-                    console.log(error);
-                    reject(null);
+                    Logger.write(error.toString(), LogLevel.Error);
+                    reject();
                 });
             }, (sender, error) => {
-                console.log(error);
-                reject(null);
-            });
-
+                Logger.write(error.toString(), LogLevel.Error);
+                reject();
+                });
         });
     }
 }

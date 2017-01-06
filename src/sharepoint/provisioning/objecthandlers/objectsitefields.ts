@@ -1,12 +1,16 @@
 "use strict";
 
 import { ObjectHandlerBase } from "./objecthandlerbase";
+import { TokenParser } from "./tokenparser";
 import { IField } from "../schema/IField";
+import { Logger, LogLevel } from "../../../utils/logging";
 
 /**
  * Describes the SiteFields Object Handler
  */
 export class ObjectSiteFields extends ObjectHandlerBase {
+
+    private contentXmlJsonProperty: string = "content";
     /**
      * Creates a new instance of the ObjectLists class
      */
@@ -19,35 +23,40 @@ export class ObjectSiteFields extends ObjectHandlerBase {
      * 
      * @param objects The lists to provision
      */
-    public ProvisionObjects(objects: Array<IField>): Promise<{}> {
+    public ProvisionObjects(objects: Array<IField>, tokenParser: TokenParser): Promise<{}> {
         super.scope_started();
         return new Promise<{}>((resolve, reject) => {
             const clientContext = SP.ClientContext.get_current();
             // fields will be provisioned inside the root web, not in subsites
             const web = clientContext.get_site().get_rootWeb();
             let existingFields: SP.FieldCollection = web.get_fields();
-            clientContext.load(existingFields);
+            clientContext.load(existingFields, "Include(Id, InternalName)");
             clientContext.executeQueryAsync(
                 () => {
                     objects.forEach((currentField) => {
-                        let existingField: SP.Field = existingFields.get_data().filter((field) => {
-                            return field.get_id().toString() === currentField.ID;
-                        })[0];
-                        if (existingField) {
-                            // update mode
-                            let schemaXml = currentField.SchemaXml ? currentField.SchemaXml : this.GetFieldXml(currentField);
-                            this.UpdateField(web, existingField.get_id().toString(), schemaXml).then((field: SP.Field) => {
-                                console.log(field);
-                                resolve(field);
-                            });
-                        } else {
-                            // add mode
-                            let schemaXml = this.GetFieldXml(currentField);
-                            this.CreateField(web, schemaXml).then((field: SP.Field) => {
-                                console.log(field);
-                                resolve(field);
-                            });
-                        }
+                        let schemaXml = currentField.SchemaXml ? currentField.SchemaXml : this.GetFieldXml(currentField);
+                        tokenParser.parseString(schemaXml).then(currentFieldSchemaXml => {
+                            let existingField: SP.Field = existingFields.get_data().filter((field) => {
+                                try {
+                                    return field.get_id().toString().toLowerCase() === currentField.ID.toLowerCase();
+                                } catch (error) {
+                                    Logger.write(error.toString(), LogLevel.Error);
+                                    return false;
+                                    // from some reasons, even was specifically loaded, the ids of some fields might not be loaded
+                                }
+                            })[0];
+                            if (existingField) {
+                                // update mode
+                                this.UpdateField(web, existingField.get_id().toString(), currentFieldSchemaXml).then((field: SP.Field) => {
+                                    resolve(field);
+                                });
+                            } else {
+                                // add mode
+                                this.CreateField(web, currentFieldSchemaXml).then((field: SP.Field) => {
+                                    resolve(field);
+                                });
+                            }
+                        });
                     });
                 });
         });
@@ -79,7 +88,7 @@ export class ObjectSiteFields extends ObjectHandlerBase {
                             if (existingFieldElement.getAttribute(attribute.name) != null) {
                                 existingFieldElement.setAttribute(attribute.name, attribute.value);
                             } else {
-                                existingFieldElement.attributes.setNamedItem(attribute);
+                                existingFieldElement.attributes.setNamedItem(attribute.cloneNode(false) as Attr);
                             }
                         }
 
@@ -97,7 +106,7 @@ export class ObjectSiteFields extends ObjectHandlerBase {
                         if (existingFieldElement.getAttribute("Version") != null) {
                             existingFieldElement.removeAttribute("Version");
                         }
-                        existingField.set_schemaXml(existingFieldElement.outerHTML);
+                        existingField.set_schemaXml(this.ReplaceBooleanStringToUpper(existingFieldElement.outerHTML));
                         existingField.updateAndPushChanges(true);
                         web.get_context().load(existingField, "TypeAsString", "DefaultValue");
                         web.get_context().executeQueryAsync(() => {
@@ -114,14 +123,14 @@ export class ObjectSiteFields extends ObjectHandlerBase {
                             }
                         },
                             (sender, error) => {
-                                console.log(error);
+                                Logger.write(error.toString(), LogLevel.Error);
                                 reject(error);
                             });
                     }
                 }
             },
                 (sender, error) => {
-                    console.log(error);
+                    Logger.write(error.toString(), LogLevel.Error);
                     reject(error);
                 });
         });
@@ -138,9 +147,9 @@ export class ObjectSiteFields extends ObjectHandlerBase {
                 templateFieldElement.removeAttribute("List");
             }
 
-            let fieldXml = templateFieldElement.outerHTML;
+            let fieldXml = this.ReplaceBooleanStringToUpper(templateFieldElement.outerHTML);
             let field = web.get_fields().addFieldAsXml(fieldXml, false, SP.AddFieldOptions.addFieldInternalNameHint);
-            web.get_context().load(field, "TypeAsString", "DefaultValue", "InternalName", "Title");
+            web.get_context().load(field, "Id", "TypeAsString", "DefaultValue", "InternalName", "Title", "SchemaXml");
             web.get_context().executeQueryAsync(() => {
                 if ((field.get_typeAsString() === "TaxonomyFieldType" ||
                     field.get_typeAsString() === "TaxonomyFieldTypeMulti")
@@ -154,7 +163,7 @@ export class ObjectSiteFields extends ObjectHandlerBase {
                 }
             },
                 (sender, error) => {
-                    console.log(error.get_message());
+                    Logger.write(error.toString(), LogLevel.Error);
                     reject(error);
                 });
         });
@@ -164,17 +173,82 @@ export class ObjectSiteFields extends ObjectHandlerBase {
         let fieldXml = "";
         if (!field.SchemaXml) {
             let properties = [];
+            let children = [];
+            let xmlContent = "";
             Object.keys(field).forEach(prop => {
                 let value = field[prop];
-                properties.push(`${prop}="${value}"`);
+                if (this.IsPrimitiveValue(value)) {
+                    if (prop.toLowerCase() !== this.contentXmlJsonProperty) {
+                        properties.push(`${prop}="${value}"`);
+                    } else {
+                        xmlContent = value;
+                    }
+                } else {
+                    children.push({ key: prop, value: value });
+                }
             });
+            // Because of JSON - XML transformation, we need one property to act as Content of an XML Node. By convention, this property is named "Content"
+            let fieldInnerXml = children.map(element => this.GetRecursiveFieldXml(element)).join(" ");
+            if (fieldInnerXml === "" && xmlContent !== "") {
+                fieldInnerXml = xmlContent;
+            }
             fieldXml = `<Field ${properties.join(" ")}>`;
             if (field.Type === "Calculated") {
                 fieldXml += `<Formula>${field.Formula}</Formula>`;
             }
+            fieldXml += fieldInnerXml;
             fieldXml += "</Field>";
         }
         return fieldXml;
+    }
+
+    private ReplaceBooleanStringToUpper(input: string): string {
+        let output: string = "";
+        output = input.replace(new RegExp("\"true\"", "g"), "\"TRUE\"");
+        output = output.replace(new RegExp("\"false\"", "g"), "\"FALSE\"");
+        return output;
+    }
+
+    private GetRecursiveFieldXml(element: { key: any, value: any }): string {
+        if (element == null) {
+            return "";
+        }
+
+        let properties = [];
+        let children = [];
+        let xmlContent = "";
+        if (!isNaN(parseInt(element.key, 0))) {
+           // this is part of the array - replace it with property
+            element.key = "Property";
+        }
+        let elementXml = "<" + element.key + " {attributes}>{children}</" + element.key + ">";
+        Object.keys(element.value).forEach(prop => {
+            let value = element.value[prop];
+            if (this.IsPrimitiveValue(value)) {
+                if (prop.toLowerCase() !== this.contentXmlJsonProperty) {
+                    properties.push(`${prop}="${value}"`);
+                } else {
+                    xmlContent = value;
+                }
+            } else {
+                children.push({ key: prop, value: value });
+            }
+        });
+        elementXml = elementXml.replace("{attributes}", properties.join(" "));
+        let fieldInnerXml = "";
+        if (children.length > 0) {
+            fieldInnerXml = children.map(childElement => this.GetRecursiveFieldXml(childElement)).join(" ");
+        } else {
+            fieldInnerXml = xmlContent;
+        }
+        elementXml = elementXml.replace("{children}", fieldInnerXml);
+        return elementXml;
+    }
+
+    private IsPrimitiveValue(value: any) {
+        return (typeof (value) === "boolean" ||
+            typeof (value) === "number" ||
+            typeof (value) === "string");
     }
 
     private ValidateTaxonomyFieldDefaultValue(field: SP.Taxonomy.TaxonomyField): Promise<void> {

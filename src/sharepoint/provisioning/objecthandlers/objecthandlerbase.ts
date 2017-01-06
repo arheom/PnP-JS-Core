@@ -21,7 +21,7 @@ export class ObjectHandlerBase {
     /**
      * Provisioning objects
      */
-    public ProvisionObjects(objects: any, parameters?) {
+    public ProvisionObjects(objects: any, tokenParser: any, parameters?) {
         return new Promise((resolve, reject) => { resolve("Not implemented."); });
     }
 

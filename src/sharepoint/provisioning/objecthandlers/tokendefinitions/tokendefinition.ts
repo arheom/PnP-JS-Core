@@ -1,7 +1,7 @@
 ﻿export class TokenDefinition {
     public web: SP.Web;
 
-    protected cacheValue: string;
+    protected cacheValue: string = null;
 
     private _tokens: string[];
 
@@ -15,9 +15,9 @@
     }
 
     public getRegex(): RegExp[] {
-        let regexs = new RegExp[this._tokens.length];
+        let regexs: RegExp[] = [];
         for (let q = 0; q < this._tokens.length; q++) {
-            regexs[q] = new RegExp(this._tokens[q], "i");
+            regexs.push(new RegExp(this._tokens[q], "i"));
         }
         return regexs;
     }

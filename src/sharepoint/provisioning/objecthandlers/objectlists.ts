@@ -4,11 +4,13 @@ import { Sequencer } from "../sequencer/sequencer";
 import { ObjectHandlerBase } from "./objecthandlerbase";
 import { IListInstance } from "../schema/IListInstance";
 import { IField } from "../schema/IField";
+import { TokenParser } from "./tokenparser";
 
 /**
  * Describes the Lists Object Handler
  */
 export class ObjectLists extends ObjectHandlerBase {
+    private tokenParser: TokenParser;
     /**
      * Creates a new instance of the ObjectLists class
      */
@@ -21,97 +23,99 @@ export class ObjectLists extends ObjectHandlerBase {
      * 
      * @param objects The lists to provision
      */
-    public ProvisionObjects(objects: Array<IListInstance>) {
+    public ProvisionObjects(objects: Array<IListInstance>, tokenParser: TokenParser) {
         super.scope_started();
+        this.tokenParser = tokenParser;
         return new Promise((resolve, reject) => {
             const clientContext = SP.ClientContext.get_current();
             let lists = clientContext.get_web().get_lists();
             let listInstances: Array<SP.List> = [];
-
-            clientContext.load(lists);
-            clientContext.executeQueryAsync(
-                () => {
-                    objects.forEach((obj, index) => {
-                        let existingObj: SP.List = lists.get_data().filter((list) => {
-                            return list.get_title() === obj.Title;
-                        })[0];
-
-                        if (existingObj) {
-                            if (obj.Description) { existingObj.set_description(obj.Description); }
-                            if (obj.EnableVersioning !== undefined) { existingObj.set_enableVersioning(obj.EnableVersioning); }
-                            if (obj.EnableMinorVersions !== undefined) { existingObj.set_enableMinorVersions(obj.EnableMinorVersions); }
-                            if (obj.EnableModeration !== undefined) { existingObj.set_enableModeration(obj.EnableModeration); }
-                            if (obj.EnableFolderCreation !== undefined) { existingObj.set_enableFolderCreation(obj.EnableFolderCreation); }
-                            if (obj.EnableAttachments !== undefined) { existingObj.set_enableAttachments(obj.EnableAttachments); }
-                            if (obj.NoCrawl !== undefined) { existingObj.set_noCrawl(obj.NoCrawl); }
-                            if (obj.DefaultDisplayFormUrl) { existingObj.set_defaultDisplayFormUrl(obj.DefaultDisplayFormUrl); }
-                            if (obj.DefaultEditFormUrl) { existingObj.set_defaultEditFormUrl(obj.DefaultEditFormUrl); }
-                            if (obj.DefaultNewFormUrl) { existingObj.set_defaultNewFormUrl(obj.DefaultNewFormUrl); }
-                            if (obj.DraftVersionVisibility) {
-                                existingObj.set_draftVersionVisibility(SP.DraftVisibilityType[obj.DraftVersionVisibility]);
+            tokenParser.parseString(JSON.stringify(objects)).then((objectsString) => {
+                objects = JSON.parse(objectsString);
+                clientContext.load(lists);
+                clientContext.executeQueryAsync(
+                    () => {
+                        objects.forEach((obj, index) => {
+                            let existingObj: SP.List = lists.get_data().filter((list) => {
+                                return list.get_title() === obj.Title;
+                            })[0];
+                            if (existingObj) {
+                                if (obj.Description) { existingObj.set_description(obj.Description); }
+                                if (obj.EnableVersioning !== undefined) { existingObj.set_enableVersioning(obj.EnableVersioning); }
+                                if (obj.EnableMinorVersions !== undefined) { existingObj.set_enableMinorVersions(obj.EnableMinorVersions); }
+                                if (obj.EnableModeration !== undefined) { existingObj.set_enableModeration(obj.EnableModeration); }
+                                if (obj.EnableFolderCreation !== undefined) { existingObj.set_enableFolderCreation(obj.EnableFolderCreation); }
+                                if (obj.EnableAttachments !== undefined) { existingObj.set_enableAttachments(obj.EnableAttachments); }
+                                if (obj.NoCrawl !== undefined) { existingObj.set_noCrawl(obj.NoCrawl); }
+                                if (obj.DefaultDisplayFormUrl) { existingObj.set_defaultDisplayFormUrl(obj.DefaultDisplayFormUrl); }
+                                if (obj.DefaultEditFormUrl) { existingObj.set_defaultEditFormUrl(obj.DefaultEditFormUrl); }
+                                if (obj.DefaultNewFormUrl) { existingObj.set_defaultNewFormUrl(obj.DefaultNewFormUrl); }
+                                if (obj.DraftVersionVisibility) {
+                                    existingObj.set_draftVersionVisibility(SP.DraftVisibilityType[obj.DraftVersionVisibility]);
+                                }
+                                if (obj.ImageUrl) { existingObj.set_imageUrl(obj.ImageUrl); }
+                                if (obj.Hidden !== undefined) { existingObj.set_hidden(obj.Hidden); }
+                                if (obj.ForceCheckout !== undefined) { existingObj.set_forceCheckout(obj.ForceCheckout); }
+                                existingObj.update();
+                                listInstances.push(existingObj);
+                                clientContext.load(listInstances[index]);
+                            } else {
+                                let objCreationInformation = new SP.ListCreationInformation();
+                                if (obj.Description) { objCreationInformation.set_description(obj.Description); }
+                                if (obj.OnQuickLaunch !== undefined) {
+                                    let value = obj.OnQuickLaunch ? SP.QuickLaunchOptions.on : SP.QuickLaunchOptions.off;
+                                    objCreationInformation.set_quickLaunchOption(value);
+                                }
+                                if (obj.TemplateType) { objCreationInformation.set_templateType(obj.TemplateType); }
+                                if (obj.Title) { objCreationInformation.set_title(obj.Title); }
+                                if (obj.Url) { objCreationInformation.set_url(obj.Url); }
+                                let createdList = lists.add(objCreationInformation);
+                                if (obj.EnableVersioning !== undefined) { createdList.set_enableVersioning(obj.EnableVersioning); }
+                                if (obj.EnableMinorVersions !== undefined) { createdList.set_enableMinorVersions(obj.EnableMinorVersions); }
+                                if (obj.EnableModeration !== undefined) { createdList.set_enableModeration(obj.EnableModeration); }
+                                if (obj.EnableFolderCreation !== undefined) { createdList.set_enableFolderCreation(obj.EnableFolderCreation); }
+                                if (obj.EnableAttachments !== undefined) { createdList.set_enableAttachments(obj.EnableAttachments); }
+                                if (obj.NoCrawl !== undefined) { createdList.set_noCrawl(obj.NoCrawl); }
+                                if (obj.DefaultDisplayFormUrl) { createdList.set_defaultDisplayFormUrl(obj.DefaultDisplayFormUrl); }
+                                if (obj.DefaultEditFormUrl) { createdList.set_defaultEditFormUrl(obj.DefaultEditFormUrl); }
+                                if (obj.DefaultNewFormUrl) { createdList.set_defaultNewFormUrl(obj.DefaultNewFormUrl); }
+                                if (obj.DraftVersionVisibility) {
+                                    let value = SP.DraftVisibilityType[obj.DraftVersionVisibility.toLocaleLowerCase()];
+                                    createdList.set_draftVersionVisibility(value);
+                                }
+                                if (obj.ImageUrl) { createdList.set_imageUrl(obj.ImageUrl); }
+                                if (obj.Hidden !== undefined) { createdList.set_hidden(obj.Hidden); }
+                                if (obj.ForceCheckout !== undefined) { createdList.set_forceCheckout(obj.ForceCheckout); }
+                                listInstances.push(createdList);
+                                clientContext.load(listInstances[index]);
                             }
-                            if (obj.ImageUrl) { existingObj.set_imageUrl(obj.ImageUrl); }
-                            if (obj.Hidden !== undefined) { existingObj.set_hidden(obj.Hidden); }
-                            if (obj.ForceCheckout !== undefined) { existingObj.set_forceCheckout(obj.ForceCheckout); }
-                            existingObj.update();
-                            listInstances.push(existingObj);
-                            clientContext.load(listInstances[index]);
-                        } else {
-                            let objCreationInformation = new SP.ListCreationInformation();
-                            if (obj.Description) { objCreationInformation.set_description(obj.Description); }
-                            if (obj.OnQuickLaunch !== undefined) {
-                                let value = obj.OnQuickLaunch ? SP.QuickLaunchOptions.on : SP.QuickLaunchOptions.off;
-                                objCreationInformation.set_quickLaunchOption(value);
-                            }
-                            if (obj.TemplateType) { objCreationInformation.set_templateType(obj.TemplateType); }
-                            if (obj.Title) { objCreationInformation.set_title(obj.Title); }
-                            if (obj.Url) { objCreationInformation.set_url(obj.Url); }
-                            let createdList = lists.add(objCreationInformation);
-                            if (obj.EnableVersioning !== undefined) { createdList.set_enableVersioning(obj.EnableVersioning); }
-                            if (obj.EnableMinorVersions !== undefined) { createdList.set_enableMinorVersions(obj.EnableMinorVersions); }
-                            if (obj.EnableModeration !== undefined) { createdList.set_enableModeration(obj.EnableModeration); }
-                            if (obj.EnableFolderCreation !== undefined) { createdList.set_enableFolderCreation(obj.EnableFolderCreation); }
-                            if (obj.EnableAttachments !== undefined) { createdList.set_enableAttachments(obj.EnableAttachments); }
-                            if (obj.NoCrawl !== undefined) { createdList.set_noCrawl(obj.NoCrawl); }
-                            if (obj.DefaultDisplayFormUrl) { createdList.set_defaultDisplayFormUrl(obj.DefaultDisplayFormUrl); }
-                            if (obj.DefaultEditFormUrl) { createdList.set_defaultEditFormUrl(obj.DefaultEditFormUrl); }
-                            if (obj.DefaultNewFormUrl) { createdList.set_defaultNewFormUrl(obj.DefaultNewFormUrl); }
-                            if (obj.DraftVersionVisibility) {
-                                let value = SP.DraftVisibilityType[obj.DraftVersionVisibility.toLocaleLowerCase()];
-                                createdList.set_draftVersionVisibility(value);
-                            }
-                            if (obj.ImageUrl) { createdList.set_imageUrl(obj.ImageUrl); }
-                            if (obj.Hidden !== undefined) { createdList.set_hidden(obj.Hidden); }
-                            if (obj.ForceCheckout !== undefined) { createdList.set_forceCheckout(obj.ForceCheckout); }
-                            listInstances.push(createdList);
-                            clientContext.load(listInstances[index]);
-                        }
-                    });
-                    clientContext.executeQueryAsync(
-                        () => {
-                            let sequencer = new Sequencer([
-                                this.ApplyContentTypeBindings,
-                                this.ApplyListInstanceFieldRefs,
-                                this.ApplyFields,
-                                this.ApplyLookupFields,
-                                this.ApplyListSecurity,
-                                this.CreateViews,
-                                this.InsertDataRows,
-                                this.CreateFolders,
-                            ],
-                                { ClientContext: clientContext, ListInstances: listInstances, Objects: objects }, this);
-                            sequencer.execute().then(() => {
+                        });
+                        clientContext.executeQueryAsync(
+                            () => {
+                                let sequencer = new Sequencer([
+                                    this.ApplyContentTypeBindings,
+                                    this.ApplyListInstanceFieldRefs,
+                                    this.ApplyFields,
+                                    this.ApplyLookupFields,
+                                    this.ApplyListSecurity,
+                                    this.CreateViews,
+                                    this.InsertDataRows,
+                                    this.CreateFolders,
+                                ],
+                                    { ClientContext: clientContext, ListInstances: listInstances, Objects: objects }, this);
+                                sequencer.execute().then(() => {
+                                    super.scope_ended();
+                                    resolve();
+                                });
+                            }, () => {
                                 super.scope_ended();
                                 resolve();
                             });
-                        }, () => {
-                            super.scope_ended();
-                            resolve();
-                        });
-                }, () => {
-                    super.scope_ended();
-                    resolve();
-                });
+                    }, () => {
+                        super.scope_ended();
+                        resolve();
+                    });
+            });
         });
     }
     private EnsureLocationBasedMetadataDefaultsReceiver(clientContext: SP.ClientContext, list: SP.List) {
@@ -180,6 +184,7 @@ export class ObjectLists extends ObjectHandlerBase {
                 if (params.Objects[index].ContentTypeBindings) {
                     l.set_contentTypesEnabled(true);
                     l.update();
+                    params.ClientContext.load(l);
                 }
             });
             params.ClientContext.load(webCts);
@@ -198,7 +203,7 @@ export class ObjectLists extends ObjectHandlerBase {
                             });
                         }
                         obj.ContentTypeBindings.forEach(ctb => {
-                            listContentTypes.addExistingContentType(webCts.getById(ctb.ContentTypeId));
+                             listContentTypes.addExistingContentType(webCts.getById(ctb.ContentTypeId));
                         });
                         if (obj.RemoveExistingContentTypes && obj.ContentTypeBindings.length > 0) {
                             for (let j = 0; j < existingContentTypes.length; j++) {
@@ -207,6 +212,7 @@ export class ObjectLists extends ObjectHandlerBase {
                             }
                         }
                         list.update();
+                        params.ClientContext.load(list);
                     });
 
                     params.ClientContext.executeQueryAsync(resolve, resolve);
@@ -242,6 +248,7 @@ export class ObjectLists extends ObjectHandlerBase {
                         }
                     });
                     l.update();
+                    params.ClientContext.load(l);
                 }
             });
             params.ClientContext.executeQueryAsync(resolve, resolve);
@@ -263,6 +270,7 @@ export class ObjectLists extends ObjectHandlerBase {
                         }
                     });
                     l.update();
+                    params.ClientContext.load(l);
                 }
             });
             params.ClientContext.executeQueryAsync(resolve, resolve);
@@ -348,6 +356,7 @@ export class ObjectLists extends ObjectHandlerBase {
                             l.get_roleAssignments().add(principal, roleBindings);
                         });
                         l.update();
+                        params.ClientContext.load(l);
                     });
                     params.ClientContext.executeQueryAsync(resolve, resolve);
                 }, resolve);
@@ -409,6 +418,7 @@ export class ObjectLists extends ObjectHandlerBase {
                                     view.update();
                                 }
                                 l.update();
+                                params.ClientContext.load(l);
                             }
                             params.ClientContext.load(l.get_views());
                         });
