@@ -145,13 +145,14 @@ export class ObjectContentTypes extends ObjectHandlerBase {
             let isDirty = false;
             // Delta handling
             let targetIds: SP.Guid[] = existingContentType.get_fieldLinks().get_data().map((item) => item.get_id());
-            let targetAllIds:string = targetIds.map(id => id.toString()).join(",").toLowerCase();
+            let targetAllIds: string = targetIds.map(id => id.toString()).join(",").toLowerCase();
             let sourceIds: SP.Guid[] = templateContentType.FieldRefs.map((item) => item.ID);
             let commonIds = sourceIds.filter((element) => targetAllIds.indexOf(element.toString().toLowerCase()) > -1);
             let fieldsNotPresentInTarget = sourceIds.filter((element) => targetAllIds.indexOf(element.toString().toLowerCase()) < 0);
 
             commonIds.forEach((fieldId) => {
-                let fieldLink: SP.FieldLink = existingContentType.get_fieldLinks().get_data().filter((fl) => fl.get_id().toString().toLowerCase() === fieldId.toString().toLowerCase())[0];
+                let fieldLink: SP.FieldLink = existingContentType.get_fieldLinks().get_data()
+                    .filter((fl) => fl.get_id().toString().toLowerCase() === fieldId.toString().toLowerCase())[0];
                 let fieldRef: IContentTypeFieldRef = templateContentType.FieldRefs.filter(fr => fr.ID.toString().toLowerCase() === fieldId.toString().toLowerCase())[0];
                 if (fieldRef != null) {
                     if (fieldLink.get_required() !== fieldRef.Required) {

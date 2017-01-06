@@ -203,7 +203,7 @@ export class ObjectSiteFields extends ObjectHandlerBase {
     }
 
     private ReplaceBooleanStringToUpper(input: string): string {
-        let output: string = "";
+        let output = "";
         output = input.replace(new RegExp("\"true\"", "g"), "\"TRUE\"");
         output = output.replace(new RegExp("\"false\"", "g"), "\"FALSE\"");
         return output;
